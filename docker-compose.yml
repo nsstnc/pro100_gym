@@ -1,0 +1,49 @@
+version: '3.8'
+
+services:
+  frontend:
+    container_name: frontend
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    ports:
+      - "8080:80"
+    depends_on:
+      db:
+        condition: service_healthy
+    privileged: true
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+
+  bot:
+    container_name: bot
+    build:
+      context: ./bot
+      dockerfile: Dockerfile
+    environment:
+      BOT_TOKEN: 8430286281:AAHXGSoSToI4eVvfhoKkwVly78UfH2TJBmA
+      USE_WEBHOOK: false
+    depends_on:
+      db:
+        condition: service_healthy
+    privileged: true
+
+  db:
+    container_name: db
+    image: postgres:15.0
+    environment:
+      POSTGRES_DB: pro_db
+      POSTGRES_USER: progym
+      POSTGRES_PASSWORD: pro100gym
+    ports:
+      - "5433:5432"
+    volumes:
+      - type: volume
+        target: /var/lib/postgresql/dataConfig
+    healthcheck:
+      test: [ "CMD-SHELL", "pg_isready -U postgres" ]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+      start_period: 3s
+    
