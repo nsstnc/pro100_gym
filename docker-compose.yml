@@ -38,12 +38,29 @@ services:
     ports:
       - "5433:5432"
     volumes:
-      - type: volume
-        target: /var/lib/postgresql/dataConfig
+      - pgdata:/var/lib/postgresql/data
     healthcheck:
       test: [ "CMD-SHELL", "pg_isready -U postgres" ]
       interval: 5s
       timeout: 5s
       retries: 5
       start_period: 3s
-    
+
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: backend
+    depends_on:
+      db:
+        condition: service_healthy
+    ports:
+      - "8000:8000"
+    environment:
+      DATABASE_URL: postgresql+asyncpg://progym:pro100gym@db:5432/pro_db
+    volumes:
+      - ./backend:/app
+    restart: on-failure
+
+volumes:
+  pgdata:
