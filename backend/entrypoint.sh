@@ -10,7 +10,7 @@ else
 fi
 
 echo "Running yoyo migrations on $MIGRATE_DB_URL"
-yoyo apply --database "$MIGRATE_DB_URL" /app/migrations || {
+yoyo apply -b --database "$MIGRATE_DB_URL" /app/migrations || {
   echo "Migrations failed"
   exit 1
 }
