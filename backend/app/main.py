@@ -1,11 +1,41 @@
+from http.client import HTTPException
+
+from app import schemas
+from app.auth import authenticate_user
 from app.exceptions import http_exception_handler, validation_exception_handler, generic_exception_handler
 from app.middleware.response_formatter import ResponseFormatterMiddleware
 from app.logger import logger
-from fastapi import FastAPI
+from fastapi import APIRouter, HTTPException, status, FastAPI, Depends
+from fastapi.security import OAuth2PasswordRequestForm
 from fastapi.middleware.cors import CORSMiddleware
+from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.db import init_db, engine
+from app.db import init_db, engine, get_session
 from app.routers import root as root_router
+from app.routers import auth as auth_router
+from app.security import create_access_token
+
+
+def create_token_app() -> FastAPI:
+    """Приложение только для /token — без middleware и форматирования."""
+    token_app = FastAPI()
+
+    @token_app.post("/token", response_model=schemas.Token, include_in_schema=False)
+    async def get_token_for_swagger(
+            form_data: OAuth2PasswordRequestForm = Depends(),
+            db: AsyncSession = Depends(get_session)
+    ):
+        user = await authenticate_user(db, username=form_data.username, password=form_data.password)
+        if not user:
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Неверное имя пользователя или пароль.",
+                headers={"WWW-Authenticate": "Bearer"},
+            )
+        access_token = create_access_token(subject=user.username)
+        return {"access_token": access_token, "token_type": "bearer"}
+
+    return token_app
 
 
 def create_app() -> FastAPI:
@@ -18,10 +48,14 @@ def create_app() -> FastAPI:
         allow_methods=["*"],
         allow_headers=["*"],
     )
+
     app.add_middleware(ResponseFormatterMiddleware)
 
     app.include_router(root_router.router)
+    app.include_router(auth_router.router)
 
+    token_app = create_token_app()
+    app.mount("/token", token_app)  # /token не проходит через middleware основного app
     # регистрируем exception handlers
     from starlette.exceptions import HTTPException as StarletteHTTPException
     from fastapi.exceptions import RequestValidationError

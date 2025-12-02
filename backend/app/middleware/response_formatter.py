@@ -38,6 +38,7 @@ class ResponseFormatterMiddleware(BaseHTTPMiddleware):
             "/redoc",
             "/static",
             "/metrics",
+            "/token/token",
         ]
 
     async def dispatch(self, request: Request, call_next):

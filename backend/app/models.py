@@ -22,8 +22,9 @@ class User(Base):
 
     id = Column(Integer, primary_key=True)
     telegram_id = Column(BigInteger, unique=True, nullable=True, index=True)
-    email = Column(String(255), unique=True, nullable=True)
-    username = Column(String(100), nullable=False)
+    email = Column(String(255), unique=True, nullable=False, index=True)
+    username = Column(String(100), nullable=False, unique=True)
+    hashed_password = Column(String, nullable=False)
 
     weight = Column(Numeric(5, 2), nullable=True)
     height = Column(Integer, nullable=True)
