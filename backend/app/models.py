@@ -91,10 +91,9 @@ class WorkoutPlan(Base):
     __tablename__ = "workout_plans"
 
     id = Column(Integer, primary_key=True)
-    user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
+    user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False, unique=True)
     name = Column(String(200), nullable=False)
     split_type = Column(String(100), nullable=True)
-    is_active = Column(Boolean, default=True)
     generated_at = Column(DateTime(timezone=True), server_default=text("now()"), nullable=False)
     expires_at = Column(DateTime(timezone=True), nullable=True)
 
