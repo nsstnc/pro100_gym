@@ -7,7 +7,7 @@ from pydantic import ValidationError
 from app.crud import user as crud_user
 from app.db import get_session
 from app.models import User
-from app.schemas import TokenData
+from app.schemas.jwt import TokenData
 from app.security import verify_password, decode_access_token
 from app.config import settings
 

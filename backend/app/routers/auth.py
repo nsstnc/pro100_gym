@@ -12,8 +12,8 @@ from app.security import create_access_token
 router = APIRouter(prefix="/auth", tags=["Auth"])
 
 
-@router.post("/register", response_model=schemas.User, status_code=status.HTTP_201_CREATED)
-async def register(user: schemas.UserCreate, db: AsyncSession = Depends(get_session)):
+@router.post("/register", response_model=schemas.user.User, status_code=status.HTTP_201_CREATED)
+async def register(user: schemas.user.UserCreate, db: AsyncSession = Depends(get_session)):
     """
     Регистрация нового пользователя.
     """
@@ -32,7 +32,7 @@ async def register(user: schemas.UserCreate, db: AsyncSession = Depends(get_sess
     return await crud_user.create_user(db=db, user=user)
 
 
-@router.post("/login", response_model=schemas.Token)
+@router.post("/login", response_model=schemas.jwt.Token)
 async def login(
     form_data: OAuth2PasswordRequestForm = Depends(), db: AsyncSession = Depends(get_session)
 ):

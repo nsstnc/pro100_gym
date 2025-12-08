@@ -10,7 +10,7 @@ from app.models import User
 router = APIRouter(prefix="/users", tags=["Users"])
 
 
-@router.get("/me", response_model=schemas.User)
+@router.get("/me", response_model=schemas.user.User)
 async def read_current_user(current_user: User = Depends(get_current_user)):
     """
     Получение информации о текущем аутентифицированном пользователе.
@@ -18,9 +18,9 @@ async def read_current_user(current_user: User = Depends(get_current_user)):
     return current_user
 
 
-@router.patch("/me", response_model=schemas.User)
+@router.patch("/me", response_model=schemas.user.User)
 async def update_current_user(
-    user_update: schemas.UserProfileUpdate,
+    user_update: schemas.user.UserProfileUpdate,
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_session)
 ):

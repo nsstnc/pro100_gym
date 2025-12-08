@@ -14,6 +14,9 @@ from app.db import init_db, engine, get_session
 from app.routers import root as root_router
 from app.routers import auth as auth_router
 from app.routers import users as users_router
+from app.routers import preferences as preferences_router
+from app.routers import workouts as workouts_router
+from app.routers import options as options_router
 from app.security import create_access_token
 
 
@@ -21,7 +24,7 @@ def create_token_app() -> FastAPI:
     """Приложение только для /token — без middleware и форматирования."""
     token_app = FastAPI()
 
-    @token_app.post("/token", response_model=schemas.Token, include_in_schema=False)
+    @token_app.post("/token", response_model=schemas.jwt.Token, include_in_schema=False)
     async def get_token_for_swagger(
             form_data: OAuth2PasswordRequestForm = Depends(),
             db: AsyncSession = Depends(get_session)
@@ -55,6 +58,9 @@ def create_app() -> FastAPI:
     app.include_router(root_router.router)
     app.include_router(auth_router.router)
     app.include_router(users_router.router)
+    app.include_router(preferences_router.router)
+    app.include_router(workouts_router.router)
+    app.include_router(options_router.router)
 
     token_app = create_token_app()
     app.mount("/token", token_app)  # /token не проходит через middleware основного app
