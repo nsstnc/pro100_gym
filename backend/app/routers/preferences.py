@@ -1,8 +1,8 @@
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.schemas.preferences import UserPreferencesUpdate
-from app.models import User, UserPreferences
+from app.schemas.preferences import UserPreferencesUpdate, UserPreferencesResponse
+from app.models import User
 from app.auth import get_current_user
 from app.db import get_session
 from app.crud import preferences as crud_preferences
@@ -10,7 +10,7 @@ from app.crud import preferences as crud_preferences
 router = APIRouter(prefix="/preferences", tags=["User Preferences"])
 
 
-@router.put("/me", response_model=UserPreferencesUpdate)
+@router.put("/me", response_model=UserPreferencesResponse, summary="Обновить предпочтения текущего пользователя")
 async def update_current_user_preferences(
     preferences_data: UserPreferencesUpdate,
     current_user: User = Depends(get_current_user),
@@ -19,8 +19,6 @@ async def update_current_user_preferences(
     """
     Обновляет предпочтения (предпочитаемые мышцы, ограничения)
     для текущего аутентифицированного пользователя.
-    # muscle_preferences: list of {"muscle_group_id": int, "preference":"like|neutral|dislike"}
-    # restrictions: list of {"type":"knee_pain", "severity":"medium", "notes": "..."}
     """
     updated_preferences = await crud_preferences.update_user_preferences(
         db, user=current_user, data=preferences_data
@@ -28,7 +26,7 @@ async def update_current_user_preferences(
     return updated_preferences
 
 
-@router.get("/me", response_model=UserPreferencesUpdate)
+@router.get("/me", response_model=UserPreferencesResponse, summary="Получить предпочтения текущего пользователя")
 async def get_current_user_preferences(
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_session)

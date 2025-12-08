@@ -10,6 +10,7 @@ from sqlalchemy import (
     DateTime,
     func,
     text,
+    Table,
 )
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import relationship
@@ -69,7 +70,7 @@ class Exercise(Base):
     __tablename__ = "exercises"
 
     id = Column(Integer, primary_key=True)
-    name = Column(String(200), nullable=False)
+    name = Column(String(200), nullable=False, unique=True)
     description = Column(Text, nullable=True)
 
     primary_muscle_group_id = Column(Integer, ForeignKey("muscle_groups.id", ondelete="SET NULL"), nullable=True)
@@ -82,6 +83,12 @@ class Exercise(Base):
     created_at = Column(DateTime(timezone=True), server_default=text("now()"), nullable=False)
 
     primary_muscle_group = relationship("MuscleGroup", back_populates="exercises", lazy="joined")
+    restricted_in_rules = relationship(
+        "RestrictionRule",
+        secondary="restriction_rule_exercises_association",
+        back_populates="restricted_exercises",
+        lazy="selectin"
+    )
 
     def __repr__(self):
         return f"<Exercise id={self.id} name={self.name!r}>"
@@ -150,20 +157,79 @@ class UserProgress(Base):
         return f"<UserProgress id={self.id} user_id={self.user_id} recorded_at={self.recorded_at}>"
 
 
+# --- Таблицы для предпочтений и ограничений ---
+
+restriction_rule_exercises_association = Table(
+    'restriction_rule_exercises_association', Base.metadata,
+    Column('restriction_rule_id', Integer, ForeignKey('restriction_rules.id', ondelete="CASCADE"), primary_key=True),
+    Column('exercise_id', Integer, ForeignKey('exercises.id', ondelete="CASCADE"), primary_key=True)
+)
+
+
+class RestrictionRule(Base):
+    __tablename__ = "restriction_rules"
+    id = Column(Integer, primary_key=True)
+    slug = Column(String(100), unique=True, nullable=False, index=True)
+    name = Column(String(100), nullable=False)
+    description = Column(Text, nullable=True)
+
+    restricted_exercises = relationship(
+        "Exercise",
+        secondary=restriction_rule_exercises_association,
+        back_populates="restricted_in_rules",
+        lazy="selectin"
+    )
+
+    def __repr__(self):
+        return f"<RestrictionRule id={self.id} name={self.name!r}>"
+
+
+class MuscleFocus(Base):
+    __tablename__ = "muscle_focuses"
+    id = Column(Integer, primary_key=True)
+    slug = Column(String(100), unique=True, nullable=False, index=True)
+    name = Column(String(100), nullable=False)
+    muscle_group_id = Column(Integer, ForeignKey("muscle_groups.id", ondelete="CASCADE"), nullable=False)
+    priority_modifier = Column(Integer, nullable=False, default=0)  # e.g., +1, -1
+
+    muscle_group = relationship("MuscleGroup", lazy="joined")
+
+    def __repr__(self):
+        return f"<MuscleFocus id={self.id} name={self.name!r}>"
+
+
+user_preferences_restriction_rules_association = Table(
+    'user_preferences_restriction_rules', Base.metadata,
+    Column('user_preferences_id', Integer, ForeignKey('user_preferences.id', ondelete="CASCADE"), primary_key=True),
+    Column('restriction_rule_id', Integer, ForeignKey('restriction_rules.id', ondelete="CASCADE"), primary_key=True)
+)
+
+user_preferences_muscle_focuses_association = Table(
+    'user_preferences_muscle_focuses', Base.metadata,
+    Column('user_preferences_id', Integer, ForeignKey('user_preferences.id', ondelete="CASCADE"), primary_key=True),
+    Column('muscle_focus_id', Integer, ForeignKey('muscle_focuses.id', ondelete="CASCADE"), primary_key=True)
+)
+
+
 class UserPreferences(Base):
     __tablename__ = "user_preferences"
 
     id = Column(Integer, primary_key=True)
     user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), unique=True, nullable=False)
-
-    # muscle_preferences: list of {"muscle_group_id": int, "preference":"like|neutral|dislike"}
-    muscle_preferences = Column(JSONB, nullable=False, server_default="[]")
-    # restrictions: list of {"type":"knee_pain", "severity":"medium", "notes": "..."}
-    restrictions = Column(JSONB, nullable=False, server_default="[]")
-
     created_at = Column(DateTime(timezone=True), server_default=text("now()"), nullable=False)
 
     user = relationship("User", back_populates="preferences", lazy="joined")
+
+    restriction_rules = relationship(
+        "RestrictionRule",
+        secondary=user_preferences_restriction_rules_association,
+        lazy="selectin"
+    )
+    muscle_focuses = relationship(
+        "MuscleFocus",
+        secondary=user_preferences_muscle_focuses_association,
+        lazy="selectin"
+    )
 
     def __repr__(self):
         return f"<UserPreferences id={self.id} user_id={self.user_id}>"
