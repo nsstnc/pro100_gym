@@ -1,3 +1,4 @@
+import enum
 from sqlalchemy import (
     Column,
     Integer,
@@ -11,10 +12,19 @@ from sqlalchemy import (
     func,
     text,
     Table,
+    Enum as PgEnum,
 )
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import relationship
 from app.db import Base
+
+
+# --- Enums ---
+class SessionStatus(enum.Enum):
+    PENDING = "pending"
+    IN_PROGRESS = "in_progress"
+    COMPLETED = "completed"
+    SKIPPED = "skipped"
 
 
 # --- Users (с полями профиля) ---
@@ -127,17 +137,76 @@ class WorkoutSession(Base):
     duration_minutes = Column(Integer, nullable=True)
     rating = Column(Integer, nullable=True)  # 1-5
     notes = Column(Text, nullable=True)
-
-    # exercises: JSONB array with performed exercises and sets details
-    exercises = Column(JSONB, nullable=False, server_default="[]")
+    status = Column(PgEnum(SessionStatus), nullable=False, default=SessionStatus.IN_PROGRESS)
 
     created_at = Column(DateTime(timezone=True), server_default=text("now()"), nullable=False)
 
     user = relationship("User", back_populates="workout_sessions", lazy="joined")
     workout_plan = relationship("WorkoutPlan", lazy="joined")
 
+    # one-to-many relationship to SessionDay
+    session_days = relationship("SessionDay", back_populates="session", cascade="all, delete-orphan", lazy="selectin")
+
     def __repr__(self):
         return f"<WorkoutSession id={self.id} user_id={self.user_id}>"
+
+
+class SessionDay(Base):
+    __tablename__ = "session_days"
+    id = Column(Integer, primary_key=True)
+    workout_session_id = Column(Integer, ForeignKey("workout_sessions.id", ondelete="CASCADE"), nullable=False)
+    plan_day_name = Column(String(200), nullable=False)
+    order = Column(Integer, nullable=False)
+    status = Column(PgEnum(SessionStatus), nullable=False, default=SessionStatus.PENDING)
+
+    session = relationship("WorkoutSession", back_populates="session_days", lazy="joined")
+    session_exercises = relationship("SessionExercise", back_populates="session_day", cascade="all, delete-orphan",
+                                     lazy="selectin")
+
+    def __repr__(self):
+        return f"<SessionDay id={self.id} name={self.plan_day_name!r}>"
+
+
+class SessionExercise(Base):
+    __tablename__ = "session_exercises"
+    id = Column(Integer, primary_key=True)
+    session_day_id = Column(Integer, ForeignKey("session_days.id", ondelete="CASCADE"), nullable=False)
+    plan_exercise_name = Column(String(200), nullable=False)
+    order = Column(Integer, nullable=False)
+    status = Column(PgEnum(SessionStatus), nullable=False, default=SessionStatus.PENDING)
+
+    session_day = relationship("SessionDay", back_populates="session_exercises", lazy="joined")
+    session_sets = relationship("SessionSet", back_populates="session_exercise", cascade="all, delete-orphan",
+                                lazy="selectin")
+
+    # Relationship to the Exercise model based on plan_exercise_name
+    exercise = relationship("Exercise", primaryjoin="SessionExercise.plan_exercise_name == Exercise.name",
+                            foreign_keys=[plan_exercise_name], viewonly=True, lazy="joined")
+
+    def __repr__(self):
+        return f"<SessionExercise id={self.id} name={self.plan_exercise_name!r}>"
+
+
+class SessionSet(Base):
+    __tablename__ = "session_sets"
+    id = Column(Integer, primary_key=True)
+    session_exercise_id = Column(Integer, ForeignKey("session_exercises.id", ondelete="CASCADE"), nullable=False)
+    order = Column(Integer, nullable=False)
+    status = Column(PgEnum(SessionStatus), nullable=False, default=SessionStatus.PENDING)
+
+    # Planned metrics
+    plan_reps_min = Column(Integer, nullable=True)
+    plan_reps_max = Column(Integer, nullable=True)
+    plan_weight = Column(Numeric(6, 2), nullable=True)
+
+    # Actual performance
+    reps_done = Column(Integer, nullable=True)
+    weight_lifted = Column(Numeric(6, 2), nullable=True)
+
+    session_exercise = relationship("SessionExercise", back_populates="session_sets", lazy="joined")
+
+    def __repr__(self):
+        return f"<SessionSet id={self.id} order={self.order}>"
 
 
 class UserProgress(Base):
