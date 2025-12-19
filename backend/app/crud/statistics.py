@@ -1,204 +1,215 @@
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select, func, and_, case, extract, desc, literal_column
-from sqlalchemy.orm import selectinload, aliased
-from typing import List, Optional, Dict, Any
-from datetime import datetime, timedelta, date
+from sqlalchemy import select, func, and_, desc
+from typing import List, Dict, Any
+from datetime import datetime, timedelta
 
 from app.models import (
-    User, WorkoutSession, SessionDay, SessionExercise, SessionSet, SessionStatus, Exercise, MuscleGroup
+    WorkoutSession, SessionDay, SessionExercise, SessionSet, SessionStatus, Exercise, MuscleGroup
 )
-from app.schemas.workout import WorkoutDay, WorkoutExercise # Potentially useful for parsing
 from app.schemas.statistics import (
     StatisticsResponse, StatisticsSummary, PersonalRecord, VolumeByMuscleGroup, ProgressDataPoint
 )
 
 
-async def _get_sessions_for_period(
-    db: AsyncSession, user_id: int, period: str
-) -> List[WorkoutSession]:
+def _get_date_filtered_query(base_query, period: str):
     """
-    Вспомогательная функция для получения завершенных тренировочных сессий пользователя за указанный период.
-    Возвращает сессии с полностью загруженными вложенными объектами.
+    Вспомогательная функция для добавления фильтра по дате к запросу.
+    """
+    if period != "all_time":
+        end_date = datetime.utcnow()
+        if period == "last_month":
+            start_date = end_date - timedelta(days=30)
+        elif period == "last_week":
+            start_date = end_date - timedelta(days=7)
+        else:
+            return base_query
+        return base_query.where(WorkoutSession.started_at >= start_date)
+    return base_query
+
+
+async def _get_summary_from_db(db: AsyncSession, user_id: int, period: str) -> Dict[str, Any]:
+    """
+    Вычисляет общую сводку, выполняя агрегацию в базе данных.
     """
     query = (
-        select(WorkoutSession)
+        select(
+            func.count(func.distinct(WorkoutSession.id)).label("total_workouts"),
+            func.sum(WorkoutSession.duration_minutes).label("total_duration_minutes"),
+            func.sum(SessionSet.reps_done * SessionSet.weight_lifted).label("total_volume_kg"),
+            func.count(SessionSet.id).label("total_sets"),
+            func.sum(SessionSet.reps_done).label("total_reps")
+        )
+        .select_from(WorkoutSession)
+        .join(SessionDay, WorkoutSession.id == SessionDay.workout_session_id)
+        .join(SessionExercise, SessionDay.id == SessionExercise.session_day_id)
+        .join(SessionSet, SessionExercise.id == SessionSet.session_exercise_id)
         .where(
-            and_(
-                WorkoutSession.user_id == user_id,
-                WorkoutSession.status == SessionStatus.COMPLETED
-            )
+            WorkoutSession.user_id == user_id,
+            WorkoutSession.status == SessionStatus.COMPLETED,
+            SessionSet.status == SessionStatus.COMPLETED,
+            SessionSet.reps_done.isnot(None),
+            SessionSet.weight_lifted.isnot(None)
         )
-        .options(
-            selectinload(WorkoutSession.session_days)
-            .selectinload(SessionDay.session_exercises)
-            .selectinload(SessionExercise.session_sets),
-            selectinload(WorkoutSession.session_days)
-            .selectinload(SessionDay.session_exercises)
-            .selectinload(SessionExercise.exercise).selectinload(Exercise.primary_muscle_group)
-        )
-        .order_by(WorkoutSession.started_at)
     )
 
-    end_date = datetime.now()
-    if period == "last_month":
-        start_date = end_date - timedelta(days=30)
-        query = query.where(WorkoutSession.started_at >= start_date)
-    elif period == "last_week":
-        start_date = end_date - timedelta(days=7)
-        query = query.where(WorkoutSession.started_at >= start_date)
-    # For 'all_time', no date filter is needed
+    # Применяем фильтр по дате к основному запросу
+    query = _get_date_filtered_query(query, period)
 
     result = await db.execute(query)
-    return result.scalars().all()
+    summary = result.first()
 
-
-async def _calculate_summary(sessions: List[WorkoutSession]) -> Dict[str, Any]:
-    """
-    Вычисляет общую сводку по переданным сессиям.
-    """
-    total_workouts = len(sessions)
-    total_duration_minutes = 0.0 # Changed to float for consistency
-    total_volume_kg = 0.0
-    total_sets = 0
-    total_reps = 0
-
-    for session in sessions:
-        if session.duration_minutes:
-            total_duration_minutes += session.duration_minutes
-        for s_day in session.session_days:
-            for s_exercise in s_day.session_exercises:
-                for s_set in s_exercise.session_sets:
-                    if s_set.status == SessionStatus.COMPLETED and s_set.reps_done and s_set.weight_lifted:
-                        total_volume_kg += (s_set.reps_done * float(s_set.weight_lifted))
-                        total_sets += 1
-                        total_reps += s_set.reps_done
-    
     return {
-        "total_workouts": total_workouts,
-        "total_duration_minutes": round(total_duration_minutes, 2), # Round duration
-        "total_volume_kg": round(total_volume_kg, 2),
-        "total_sets": total_sets,
-        "total_reps": total_reps,
+        "total_workouts": summary.total_workouts or 0,
+        "total_duration_minutes": round(float(summary.total_duration_minutes or 0), 2),
+        "total_volume_kg": round(float(summary.total_volume_kg or 0), 2),
+        "total_sets": summary.total_sets or 0,
+        "total_reps": summary.total_reps or 0,
     }
 
 
-async def _calculate_personal_records(sessions: List[WorkoutSession]) -> List[PersonalRecord]:
+async def _get_personal_records_from_db(db: AsyncSession, user_id: int, period: str) -> List[PersonalRecord]:
     """
-    Вычисляет персональные рекорды (max_weight_kg для каждого упражнения).
+    Вычисляет персональные рекорды, используя оконную функцию в БД.
     """
-    pr_map: Dict[str, Dict[str, Any]] = {} # exercise_name -> {max_weight, reps, date}
+    base_join_query = (
+        select(
+            SessionExercise.plan_exercise_name.label("exercise_name"),
+            SessionSet.weight_lifted.label("max_weight_kg"),
+            SessionSet.reps_done.label("reps"),
+            WorkoutSession.started_at.label("date"),
+            func.row_number().over(
+                partition_by=SessionExercise.plan_exercise_name,
+                order_by=[
+                    desc(SessionSet.weight_lifted),
+                    desc(SessionSet.reps_done),
+                    desc(WorkoutSession.started_at)
+                ]
+            ).label("rn")
+        )
+        .select_from(WorkoutSession)
+        .join(SessionDay, WorkoutSession.id == SessionDay.workout_session_id)
+        .join(SessionExercise, SessionDay.id == SessionExercise.session_day_id)
+        .join(SessionSet, SessionExercise.id == SessionSet.session_exercise_id)
+        .where(
+            WorkoutSession.user_id == user_id,
+            WorkoutSession.status == SessionStatus.COMPLETED,
+            SessionSet.status == SessionStatus.COMPLETED,
+            SessionSet.weight_lifted.isnot(None),
+            SessionSet.reps_done.isnot(None)
+        )
+    )
 
-    # Sort sessions by started_at to ensure we capture the correct date for PRs
-    sessions.sort(key=lambda s: s.started_at)
+    filtered_join_query = _get_date_filtered_query(base_join_query, period)
+    subquery = filtered_join_query.subquery()
+    final_query = select(subquery).where(subquery.c.rn == 1)
 
-    for session in sessions:
-        for s_day in session.session_days:
-            for s_exercise in s_day.session_exercises:
-                for s_set in s_exercise.session_sets:
-                    if s_set.status == SessionStatus.COMPLETED and s_set.weight_lifted and s_set.reps_done:
-                        exercise_name = s_exercise.plan_exercise_name
-                        current_weight = float(s_set.weight_lifted)
+    result = await db.execute(final_query)
+    records = result.all()
 
-                        if exercise_name not in pr_map or current_weight > pr_map[exercise_name]["max_weight_kg"]:
-                            pr_map[exercise_name] = {
-                                "exercise_name": exercise_name,
-                                "max_weight_kg": current_weight,
-                                "reps": s_set.reps_done,
-                                "date": session.started_at.isoformat()
-                            }
-                        elif current_weight == pr_map[exercise_name]["max_weight_kg"]:
-                             # If same weight, prioritize higher reps, then later date
-                             if s_set.reps_done > pr_map[exercise_name].get("reps", 0) or \
-                                session.started_at.isoformat() > pr_map[exercise_name]["date"]:
-                                pr_map[exercise_name] = {
-                                    "exercise_name": exercise_name,
-                                    "max_weight_kg": current_weight,
-                                    "reps": s_set.reps_done,
-                                    "date": session.started_at.isoformat()
-                                }
-    
-    return [PersonalRecord(**pr) for pr in pr_map.values()]
+    return [PersonalRecord(
+        exercise_name=r.exercise_name,
+        max_weight_kg=float(r.max_weight_kg),
+        reps=r.reps,
+        date=r.date.isoformat()
+    ) for r in records]
 
 
-async def _calculate_volume_by_muscle_group(sessions: List[WorkoutSession]) -> List[VolumeByMuscleGroup]:
+async def _get_volume_by_muscle_group_from_db(db: AsyncSession, user_id: int, period: str) -> List[VolumeByMuscleGroup]:
     """
-    Вычисляет объем (тоннаж) по группам мышц.
+    Вычисляет объем по группам мышц, используя GROUP BY в БД.
     """
-    volume_map: Dict[str, float] = {} # muscle_group_name -> total_volume
+    query = (
+        select(
+            MuscleGroup.name.label("muscle_group"),
+            func.sum(SessionSet.reps_done * SessionSet.weight_lifted).label("volume_kg")
+        )
+        .select_from(WorkoutSession)
+        .join(SessionDay, WorkoutSession.id == SessionDay.workout_session_id)
+        .join(SessionExercise, SessionDay.id == SessionExercise.session_day_id)
+        .join(SessionSet, SessionExercise.id == SessionSet.session_exercise_id)
+        .join(Exercise, SessionExercise.plan_exercise_name == Exercise.name)
+        .join(MuscleGroup, Exercise.primary_muscle_group_id == MuscleGroup.id)
+        .where(
+            WorkoutSession.user_id == user_id,
+            WorkoutSession.status == SessionStatus.COMPLETED,
+            SessionSet.status == SessionStatus.COMPLETED,
+            SessionSet.reps_done.isnot(None),
+            SessionSet.weight_lifted.isnot(None)
+        )
+        .group_by(MuscleGroup.name)
+        .order_by(desc("volume_kg"))
+    )
 
-    for session in sessions:
-        for s_day in session.session_days:
-            for s_exercise in s_day.session_exercises:
-                muscle_group_name = "Неизвестная группа мышц" # Default value
-                if s_exercise.exercise and s_exercise.exercise.primary_muscle_group:
-                    muscle_group_name = s_exercise.exercise.primary_muscle_group.name
-                
-                for s_set in s_exercise.session_sets:
-                    if s_set.status == SessionStatus.COMPLETED and s_set.reps_done and s_set.weight_lifted:
-                        volume = s_set.reps_done * float(s_set.weight_lifted)
-                        volume_map[muscle_group_name] = volume_map.get(muscle_group_name, 0.0) + volume
-    
-    return [VolumeByMuscleGroup(muscle_group=mg, volume_kg=round(vol, 2)) for mg, vol in volume_map.items()]
+    query = _get_date_filtered_query(query, period)
+
+    result = await db.execute(query)
+    volumes = result.all()
+
+    return [VolumeByMuscleGroup(
+        muscle_group=v.muscle_group,
+        volume_kg=round(float(v.volume_kg), 2)
+    ) for v in volumes]
 
 
-async def _calculate_progress_chart_data(
-    sessions: List[WorkoutSession], metric: str
-) -> Dict[str, List[ProgressDataPoint]]:
+async def _get_progress_chart_data_from_db(db: AsyncSession, user_id: int, period: str) -> Dict[str, List[ProgressDataPoint]]:
     """
-    Вычисляет данные для графиков прогресса.
-    Metric can be 'overall_volume'.
+    Вычисляет данные для графика прогресса общего объема, используя GROUP BY в БД.
     """
-    chart_data: Dict[str, List[ProgressDataPoint]] = {}
+    date_trunc = func.date(WorkoutSession.completed_at)
 
-    if metric == "overall_volume":
-        # Aggregate total volume per day
-        daily_volume: Dict[date, float] = {}
-        for session in sessions:
-            if session.completed_at: # Only consider completed sessions for chart data
-                session_date = session.completed_at.date()
-                session_volume = 0.0
-                for s_day in session.session_days:
-                    for s_exercise in s_day.session_exercises:
-                        for s_set in s_exercise.session_sets:
-                            if s_set.status == SessionStatus.COMPLETED and s_set.reps_done and s_set.weight_lifted:
-                                session_volume += (s_set.reps_done * float(s_set.weight_lifted))
-                daily_volume[session_date] = daily_volume.get(session_date, 0.0) + session_volume
-        
-        # Sort by date and format
-        chart_data["overall_volume"] = [
-            ProgressDataPoint(date=d.isoformat(), value_kg=round(v, 2)) for d, v in sorted(daily_volume.items())
+    query = (
+        select(
+            date_trunc.label("date"),
+            func.sum(SessionSet.reps_done * SessionSet.weight_lifted).label("value_kg")
+        )
+        .select_from(WorkoutSession)
+        .join(SessionDay, WorkoutSession.id == SessionDay.workout_session_id)
+        .join(SessionExercise, SessionDay.id == SessionExercise.session_day_id)
+        .join(SessionSet, SessionExercise.id == SessionSet.session_exercise_id)
+        .where(
+            WorkoutSession.user_id == user_id,
+            WorkoutSession.status == SessionStatus.COMPLETED,
+            WorkoutSession.completed_at.isnot(None),
+            SessionSet.status == SessionStatus.COMPLETED,
+            SessionSet.reps_done.isnot(None),
+            SessionSet.weight_lifted.isnot(None)
+        )
+        .group_by("date")
+        .order_by("date")
+    )
+
+    query = _get_date_filtered_query(query, period)
+
+    result = await db.execute(query)
+    points = result.all()
+
+    return {
+        "overall_volume": [
+            ProgressDataPoint(date=p.date.isoformat(), value_kg=round(float(p.value_kg), 2))
+            for p in points
         ]
-    
-    return chart_data
+    }
 
 
 async def get_user_statistics(
     db: AsyncSession, user_id: int, period: str = "all_time"
 ) -> StatisticsResponse:
     """
-    Собирает и возвращает полную статистику для пользователя.
+    Собирает и возвращает полную статистику для пользователя,
+    выполняя все расчеты на стороне базы данных.
     """
-    sessions = await _get_sessions_for_period(db, user_id, period)
+    summary_data_raw = await _get_summary_from_db(db, user_id, period)
+    personal_records_data = await _get_personal_records_from_db(db, user_id, period)
+    volume_by_muscle_group_data = await _get_volume_by_muscle_group_from_db(db, user_id, period)
+    overall_volume_chart_data = await _get_progress_chart_data_from_db(db, user_id, period)
 
-    summary_data_raw = await _calculate_summary(sessions)
-    personal_records_data = await _calculate_personal_records(sessions)
-    volume_by_muscle_group_data = await _calculate_volume_by_muscle_group(sessions)
-    overall_volume_chart_data = await _calculate_progress_chart_data(sessions, "overall_volume")
-
-    # Create StatisticsSummary object
     summary = StatisticsSummary(
-        total_workouts=summary_data_raw["total_workouts"],
-        total_duration_minutes=summary_data_raw["total_duration_minutes"],
-        total_volume_kg=summary_data_raw["total_volume_kg"],
-        total_sets=summary_data_raw["total_sets"],
-        total_reps=summary_data_raw["total_reps"],
-        personal_records=personal_records_data
+        personal_records=personal_records_data,
+        **summary_data_raw
     )
 
-    # Combine into the final response structure
     return StatisticsResponse(
         summary=summary,
         volume_by_muscle_group=volume_by_muscle_group_data,
         progress_charts=overall_volume_chart_data
     )
-
