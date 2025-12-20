@@ -69,7 +69,7 @@ async def reminder_loop(bot):
                 except Exception as e:
                     print(f"Ошибка мотивации {user_id}: {e}")
 
-        await asyncio.sleep(600)  # каждые 10 минут
+        await asyncio.sleep(60)  # каждые 10 минут
 
 # ----------------------------
 # Клавиатуры
@@ -302,7 +302,7 @@ async def cb_skip_set(callback: types.CallbackQuery):
 # Выбор следующей тренировки по дню недели
 # ----------------------------
 @router.callback_query(F.data.startswith("next_train:"))
-@router.callback_query(F.data.startswith("training_day:"))
+
 async def training_day_selected(callback: types.CallbackQuery):
     user_id = callback.from_user.id
     day_index = int(callback.data.split(":")[1])
