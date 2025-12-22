@@ -10,7 +10,7 @@ API_URL = os.getenv("API_URL", "http://localhost:8000")
 API_USERNAME = os.getenv("API_USERNAME")
 API_PASSWORD = os.getenv("API_PASSWORD")
 
-USE_FAKE_BACKEND = True  # ⬅︎ Включаем локальный режим. Потом поставишь False.
+USE_FAKE_BACKEND = False  # ⬅︎Чтобы включить локальный режим - поставить True.
 
 if not API_USERNAME or not API_PASSWORD:
     print("Warning: API_USERNAME or API_PASSWORD not set in .env. Some endpoints require auth.")
