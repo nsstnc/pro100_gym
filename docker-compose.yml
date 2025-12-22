@@ -25,6 +25,10 @@ services:
     environment:
       BOT_TOKEN: 8430286281:AAHXGSoSToI4eVvfhoKkwVly78UfH2TJBmA
       USE_WEBHOOK: false
+      API_URL: http://backend:8000/
+      API_USERNAME: Mgmyrin
+      API_PASSWORD: telegram
+      USER_ID: 767498750
     depends_on:
       db:
         condition: service_healthy
