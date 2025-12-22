@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app import schemas
@@ -18,14 +18,20 @@ async def read_current_user(current_user: User = Depends(get_current_user)):
     return current_user
 
 
-@router.patch("/me", response_model=schemas.user.User)
-async def update_current_user(
+@router.put("/me/profile", response_model=schemas.user.User)
+async def update_current_user_profile(
     user_update: schemas.user.UserProfileUpdate,
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_session)
 ):
     """
-    Изменение информации о текущем аутентифицированном пользователе.
+    Обновление профиля текущего пользователя: вес, рост, возраст, цель, уровень опыта и т.д.
     """
-    updated_user = await crud_user.update_user(db, current_user, user_update)
-    return updated_user
+    try:
+        updated_user = await crud_user.update_user_profile(db, current_user, user_update)
+        return updated_user
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Ошибка обновления профиля: {e}"
+        )

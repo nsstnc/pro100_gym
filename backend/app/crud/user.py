@@ -5,6 +5,29 @@ from app.models import User
 from app.schemas.user import UserCreate, UserProfileUpdate
 from app.security import get_password_hash
 
+from sqlalchemy import update
+
+
+from sqlalchemy import update
+from sqlalchemy.ext.asyncio import AsyncSession
+from app.models import User
+from app.schemas.user import UserProfileUpdate
+
+async def update_user_profile(db: AsyncSession, db_user: User, profile_update: UserProfileUpdate) -> User:
+    update_data = profile_update.dict(exclude_unset=True)  # только заполненные поля
+    if not update_data:
+        return db_user  # нечего обновлять
+
+    stmt = (
+        update(User)
+        .where(User.id == db_user.id)
+        .values(**update_data)
+        .execution_options(synchronize_session="fetch")
+    )
+    await db.execute(stmt)
+    await db.commit()
+    await db.refresh(db_user)
+    return db_user
 
 async def get_user_by_email(db: AsyncSession, email: str) -> User | None:
     """
@@ -66,3 +89,4 @@ async def update_user(db: AsyncSession, user_to_update: User, data: UserProfileU
     await db.commit()
     await db.refresh(user_to_update)
     return user_to_update
+

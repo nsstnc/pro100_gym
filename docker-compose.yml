@@ -20,6 +20,8 @@ services:
     build:
       context: ./bot
       dockerfile: Dockerfile
+    env_file:
+    - ./bot/.env
     environment:
       BOT_TOKEN: 8430286281:AAHXGSoSToI4eVvfhoKkwVly78UfH2TJBmA
       USE_WEBHOOK: false

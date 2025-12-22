@@ -26,6 +26,8 @@ from fastapi_cache import FastAPICache
 from fastapi_cache.backends.inmemory import InMemoryBackend
 
 
+
+
 def create_token_app() -> FastAPI:
     """Приложение только для /token — без middleware и форматирования."""
     token_app = FastAPI()
@@ -69,6 +71,7 @@ def create_app() -> FastAPI:
     app.include_router(options_router.router)
     app.include_router(sessions_router.router)
     app.include_router(statistics_router.router)
+
 
     token_app = create_token_app()
     app.mount("/token", token_app)  # /token не проходит через middleware основного app
