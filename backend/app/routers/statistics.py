@@ -1,7 +1,6 @@
 from fastapi import APIRouter, Depends, Query, HTTPException, status
 from sqlalchemy.ext.asyncio import AsyncSession
 from typing import Optional
-from fastapi_cache.decorator import cache
 
 from app.db import get_session
 from app.auth import get_current_user
@@ -14,7 +13,6 @@ router = APIRouter(prefix="/statistics", tags=["User Statistics"])
 
 
 @router.get("/me", response_model=StatisticsResponse)
-@cache(expire=900)
 async def get_user_statistics(
     period: Optional[str] = Query("all_time", description="Период для статистики (all_time, last_month, last_week)"),
     current_user: User = Depends(get_current_user),

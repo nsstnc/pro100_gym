@@ -185,7 +185,7 @@ async def _get_progress_chart_data_from_db(db: AsyncSession, user_id: int, perio
 
     return {
         "overall_volume": [
-            ProgressDataPoint(date=p.date.isoformat(), value_kg=round(float(p.value_kg), 2))
+            {"date": p.date.isoformat(), "value_kg": round(float(p.value_kg), 2)}
             for p in points
         ]
     }
