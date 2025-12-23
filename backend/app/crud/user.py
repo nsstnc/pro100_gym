@@ -18,6 +18,18 @@ async def get_user_by_email(db: AsyncSession, email: str) -> User | None:
     return result.scalars().first()
 
 
+async def get_user_by_id(db: AsyncSession, user_id: int) -> User | None:
+    """
+    Получение пользователя по ID.
+
+    :param db: Сессия базы данных.
+    :param user_id: ID пользователя.
+    :return: Модель пользователя или None.
+    """
+    result = await db.execute(select(User).filter(User.id == user_id))
+    return result.scalars().first()
+
+
 async def get_user_by_username(db: AsyncSession, username: str) -> User | None:
     """
     Получение пользователя по имени.
@@ -27,6 +39,18 @@ async def get_user_by_username(db: AsyncSession, username: str) -> User | None:
     :return: Модель пользователя или None.
     """
     result = await db.execute(select(User).filter(User.username == username))
+    return result.scalars().first()
+
+
+async def get_user_by_telegram_id(db: AsyncSession, telegram_id: int) -> User | None:
+    """
+    Получение пользователя по Telegram ID.
+
+    :param db: Сессия базы данных.
+    :param telegram_id: Telegram ID пользователя.
+    :return: Модель пользователя или None.
+    """
+    result = await db.execute(select(User).filter(User.telegram_id == telegram_id))
     return result.scalars().first()
 
 
@@ -62,6 +86,22 @@ async def update_user(db: AsyncSession, user_to_update: User, data: UserProfileU
     for field, value in data.dict(exclude_unset=True).items():
         setattr(user_to_update, field, value)
 
+    db.add(user_to_update)
+    await db.commit()
+    await db.refresh(user_to_update)
+    return user_to_update
+
+
+async def update_user_telegram_id(db: AsyncSession, user_to_update: User, telegram_id: int) -> User:
+    """
+    Обновление Telegram ID пользователя.
+
+    :param db: Сессия базы данных.
+    :param user_to_update: Существующая модель пользователя, которую нужно обновить.
+    :param telegram_id: Telegram ID для привязки.
+    :return: Обновленная модель пользователя.
+    """
+    user_to_update.telegram_id = telegram_id
     db.add(user_to_update)
     await db.commit()
     await db.refresh(user_to_update)

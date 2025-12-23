@@ -25,5 +25,8 @@ class Settings:
     ALGORITHM: str = "HS256"
     ACCESS_TOKEN_EXPIRE_DAYS: int = 14
 
+    # --- Telegram ---
+    TELEGRAM_BOT_USERNAME: str = os.getenv("TELEGRAM_BOT_USERNAME", "your_bot_username")
+
 
 settings = Settings()

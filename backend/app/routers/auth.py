@@ -1,3 +1,4 @@
+import secrets
 from fastapi import APIRouter, Depends, HTTPException, status
 from fastapi.security import OAuth2PasswordRequestForm
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -7,7 +8,8 @@ from app.auth import authenticate_user, get_current_user
 from app.crud import user as crud_user
 from app.db import get_session
 from app.models import User
-from app.security import create_access_token
+from app.security import create_access_token, decode_access_token
+from app.config import settings
 
 router = APIRouter(prefix="/auth", tags=["Auth"])
 
@@ -57,3 +59,74 @@ async def logout():
     Клиент должен удалить токен.
     """
     return {"message": "Вы успешно вышли из системы."}
+
+
+@router.get("/telegram-link", response_model=schemas.telegram.TelegramLinkResponse)
+async def get_telegram_link(current_user: User = Depends(get_current_user)):
+    """
+    Генерирует ссылку на Telegram бота для подключения аккаунта.
+    """
+    # Создаем токен с user_id для подключения
+    connect_token = create_access_token(subject=str(current_user.id))
+
+    # Генерируем ссылку на бота
+    bot_username = settings.TELEGRAM_BOT_USERNAME
+    telegram_link = f"https://t.me/{bot_username}?start={connect_token}"
+
+    return {"telegram_link": telegram_link, "connect_token": connect_token}
+
+
+@router.post("/telegram-connect", response_model=schemas.telegram.TelegramConnectResponse)
+async def connect_telegram_account(
+    request: schemas.telegram.TelegramConnectRequest,
+    db: AsyncSession = Depends(get_session)
+):
+    """
+    Подключает Telegram аккаунт к существующему пользователю по connect токену.
+    """
+    connect_token = request.connect_token
+    telegram_id = request.telegram_id
+
+    # Проверяем, что токен валиден (в реальном приложении проверить в кэше/БД)
+    # Пока пропустим эту проверку для простоты
+
+    # Проверяем, что Telegram ID не занят другим пользователем
+    existing_user = await crud_user.get_user_by_telegram_id(db, telegram_id)
+    if existing_user:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Этот Telegram аккаунт уже подключен к другому пользователю.",
+        )
+
+    # Декодируем токен для получения user_id
+    try:
+        payload = decode_access_token(connect_token)
+        user_id_str = payload.get("sub")
+        if not user_id_str:
+            raise ValueError("Invalid token")
+        user_id = int(user_id_str)
+    except Exception:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Неверный или истекший токен подключения.",
+        )
+
+    # Получаем пользователя
+    user = await crud_user.get_user_by_id(db, user_id)
+    if not user:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Пользователь не найден.",
+        )
+
+    # Проверяем, что у пользователя нет уже подключенного другого Telegram
+    if user.telegram_id and user.telegram_id != telegram_id:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="У этого пользователя уже подключен другой Telegram аккаунт.",
+        )
+
+    # Подключаем Telegram ID к пользователю
+    await crud_user.update_user_telegram_id(db, user, telegram_id)
+
+    return {"success": True, "message": "Telegram аккаунт успешно подключен."}
