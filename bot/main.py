@@ -3,12 +3,13 @@ from aiohttp import web
 from aiogram import types
 from bot import bot, dp
 from config import USE_WEBHOOK, WEBHOOK_URL, WEBAPP_HOST, WEBAPP_PORT
+from training_manager import reminder_loop  # фоновые задачи
 
-# --- webhook handlers (если используем webhook) ---
 async def on_startup(app: web.Application):
     if USE_WEBHOOK:
-        # Установка webhook на полный URL 
         await bot.set_webhook(WEBHOOK_URL)
+    # Запуск фоновой задачи напоминаний
+    asyncio.create_task(reminder_loop(bot))
 
 async def on_shutdown(app: web.Application):
     if USE_WEBHOOK:
@@ -18,7 +19,6 @@ async def on_shutdown(app: web.Application):
 async def handle_webhook(request: web.Request):
     data = await request.json()
     update = types.Update(**data)
-    # Передаём апдейт в диспетчер
     await dp.feed_update(update)
     return web.Response(text="ok")
 
@@ -27,9 +27,7 @@ def run_polling():
     asyncio.run(dp.start_polling(bot))
 
 def run_webhook():
-    print("Запуск бота в режиме webhook...")
     app = web.Application()
-    # путь /webhook (указан в WEBHOOK_URL)
     app.router.add_post("/webhook", handle_webhook)
     app.on_startup.append(on_startup)
     app.on_shutdown.append(on_shutdown)
