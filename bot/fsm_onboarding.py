@@ -2,7 +2,8 @@ from aiogram import Router, F, types
 from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton, Message
 from aiogram.fsm.state import StatesGroup, State
 from aiogram.fsm.context import FSMContext
-from api import backend  # Ваш клиент бэкенда
+from api import backend
+from config import API_URL  # Добавляем импорт API_URL
 
 router = Router()
 
@@ -126,14 +127,12 @@ async def session_duration(message: Message, state: FSMContext):
         # Используем существующий эндпоинт PATCH /users/me
         s = await backend._session_obj()
         headers = await backend._headers()
-        async with s.patch(f"{backend.API_URL}/users/me", json=profile, headers=headers) as resp:
+        async with s.patch(f"{API_URL}/users/me", json=profile, headers=headers) as resp:
             result = await resp.json()
 
-        # Если ошибка — покажем её
         if resp.status >= 400:
             return await message.answer(f"Ошибка обновления профиля: {result.get('detail', result)}")
 
-        # Успех
         generate_plan_keyboard = InlineKeyboardMarkup(
             inline_keyboard=[
                 [InlineKeyboardButton(text="💪 Сгенерировать план", callback_data="generate_plan")]
