@@ -1,5 +1,5 @@
 import { Link } from 'react-router-dom';
-import { FC } from 'react';
+import type {FC} from 'react';
 
 import { logoutUser } from '../api';
 

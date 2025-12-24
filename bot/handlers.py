@@ -191,7 +191,7 @@ async def auth_password(message: Message, state: FSMContext):
             ) as response:
                 if response.status == 200:
                     data = await response.json()
-                    if data.get('success'):
+                    if data.get('data').get('success'):
                         await message.answer(
                             f"✅ {data.get('message', 'Авторизация успешна!')}\n\n"
                             "Теперь вы можете использовать все функции бота.\n"
