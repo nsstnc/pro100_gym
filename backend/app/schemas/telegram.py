@@ -1,25 +1,19 @@
 from pydantic import BaseModel
 
 
-class TelegramLinkResponse(BaseModel):
+class BotLoginRequest(BaseModel):
     """
-    Схема ответа для генерации ссылки на Telegram бота.
+    Схема запроса для аутентификации через бота.
     """
-    telegram_link: str
-    connect_token: str
-
-
-class TelegramConnectRequest(BaseModel):
-    """
-    Схема запроса для подключения Telegram аккаунта.
-    """
-    connect_token: str
     telegram_id: int
+    username: str
+    password: str
 
 
-class TelegramConnectResponse(BaseModel):
+class BotLoginResponse(BaseModel):
     """
-    Схема ответа для подключения Telegram аккаунта.
+    Схема ответа для аутентификации через бота.
     """
     success: bool
     message: str
+    user_id: int | None = None

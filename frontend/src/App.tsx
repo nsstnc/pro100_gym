@@ -12,7 +12,6 @@ import DashboardLayout from './pages/dashboard/DashboardLayout';
 import DashboardHome from './pages/dashboard/DashboardHome';
 import DashboardWorkout from './pages/dashboard/DashboardWorkout';
 import DashboardStats from './pages/dashboard/DashboardStats';
-import Connect from './pages/Connect';
 
 const getHasToken = () => {
   try {
@@ -40,8 +39,6 @@ const getPageTitle = (pathname: string) => {
       return 'Статистика';
     case '/onboarding':
       return 'Онбординг';
-    case '/connect':
-      return 'Подключение Telegram';
     default:
       return 'pro100gym';
   }
@@ -77,7 +74,6 @@ const AppShell = () => {
             <Route path="/login" element={<Login />} />
             <Route path="/about" element={<About />} />
             <Route path="/onboarding" element={<Onboarding />} />
-            <Route path="/connect" element={<Connect />} />
             <Route path="/dashboard" element={<DashboardLayout />}>
               <Route index element={<DashboardHome />} />
               <Route path="workout" element={<DashboardWorkout />} />

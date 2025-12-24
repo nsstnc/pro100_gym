@@ -1,61 +1,46 @@
 import aiohttp
 from aiogram import Router
-from aiogram.types import Message, InlineKeyboardMarkup, InlineKeyboardButton
+from aiogram.types import Message, ReplyKeyboardMarkup, KeyboardButton
 from aiogram.filters import CommandStart, Command
-from config import API_BASE_URL, FRONTEND_URL
+from config import API_BASE_URL
+
+# Хранилище состояний пользователей для онбординга
+user_states = {}  # user_id -> {'state': 'waiting_login' | 'waiting_password', 'login': str}
 
 router = Router()
 
 @router.message(CommandStart())
 async def cmd_start(message: Message):
-    # Проверяем, передан ли токен подключения
-    args = message.text.split()
-    if len(args) > 1 and args[1].startswith('ey'):  # JWT токен начинается с 'ey'
-        connect_token = args[1]
-        telegram_id = message.from_user.id
+    user_id = message.from_user.id
 
-        # Автоматически подключаем аккаунт
-        async with aiohttp.ClientSession() as session:
-            try:
-                async with session.post(
-                    f"{API_BASE_URL}/auth/telegram-connect",
-                    json={"connect_token": connect_token, "telegram_id": telegram_id}
-                ) as response:
-                    if response.status == 200:
-                        data = await response.json()
-                        await message.answer(
-                            f"✅ {data.get('message', 'Аккаунт успешно подключен!')}\n\n"
-                            "Теперь вы можете использовать бота для управления тренировками.\n"
-                            "Используйте /help для просмотра доступных команд."
-                        )
-                        return
-                    else:
-                        error_data = await response.json()
-                        await message.answer(
-                            f"❌ Ошибка подключения: {error_data.get('detail', 'Неизвестная ошибка')}\n\n"
-                            "Попробуйте еще раз или обратитесь в поддержку."
-                        )
-                        return
-            except Exception as e:
-                await message.answer(f"❌ Ошибка соединения с сервером: {str(e)}")
-                return
+    # Проверяем, есть ли у пользователя уже подключенный аккаунт
+    async with aiohttp.ClientSession() as session:
+        try:
+            async with session.get(f"{API_BASE_URL}/users/by-telegram/{user_id}") as response:
+                if response.status == 200:
+                    user_data = await response.json()
+                    await message.answer(
+                        f"🏋️ С возвращением, {user_data.get('username', 'пользователь')}!\n\n"
+                        "Вы уже авторизованы. Используйте /help для просмотра команд."
+                    )
+                    return
+        except Exception:
+            pass  # Игнорируем ошибки, продолжаем с авторизацией
 
-    # Создаем клавиатуру с кнопкой подключения
-    keyboard = InlineKeyboardMarkup(
-        inline_keyboard=[
-            [
-                InlineKeyboardButton(
-                    text="🔗 Подключить аккаунт с сайта",
-                    url=f"{FRONTEND_URL}/connect"  # URL фронтенда
-                )
-            ]
-        ]
+    # Начинаем процесс авторизации
+    user_states[user_id] = {'state': 'waiting_login'}
+    keyboard = ReplyKeyboardMarkup(
+        keyboard=[
+            [KeyboardButton(text="🚀 Начать авторизацию")]
+        ],
+        resize_keyboard=True,
+        one_time_keyboard=True
     )
 
     await message.answer(
         "🏋️ Добро пожаловать в Pro100 Gym!\n\n"
-        "Я — бот, который поможет с персональными программами тренировок.\n\n"
-        "Для начала подключите свой аккаунт с сайта:",
+        "Для использования бота нужно авторизоваться.\n"
+        "Нажмите кнопку ниже, чтобы начать:",
         reply_markup=keyboard
     )
 
@@ -63,47 +48,84 @@ async def cmd_start(message: Message):
 async def cmd_help(message: Message):
     await message.answer(
         "📘 Доступные команды:\n"
-        "/start — начать работу\n"
-        "/connect [token] — подключить аккаунт с сайта\n"
+        "/start — начать авторизацию и работу с ботом\n"
         "/help — показать это сообщение\n\n"
         "В разработке: сбор параметров, подбор программ и т.д."
     )
 
 
-@router.message(Command("connect"))
-async def cmd_connect(message: Message):
+@router.message()
+async def handle_text(message: Message):
     """
-    Подключает Telegram аккаунт к аккаунту на сайте.
-    Ожидает токен в формате /connect <token>
+    Обрабатывает текстовые сообщения в зависимости от состояния пользователя.
     """
-    args = message.text.split()
-    if len(args) < 2:
+    user_id = message.from_user.id
+    text = message.text
+
+    # Проверяем состояние пользователя
+    user_state = user_states.get(user_id)
+
+    if not user_state:
+        # Пользователь не в процессе авторизации
         await message.answer(
-            "❌ Использование: /connect <токен>\n\n"
-            "Получите токен на сайте в разделе профиля."
+            "Используйте /start для начала работы с ботом."
         )
         return
 
-    connect_token = args[1]
-    telegram_id = message.from_user.id
+    if user_state['state'] == 'waiting_login':
+        if text == "🚀 Начать авторизацию":
+            await message.answer(
+                "Введите ваше имя пользователя (username) на сайте:"
+            )
+            return
 
-    # Отправляем запрос на backend для подключения аккаунта
-    async with aiohttp.ClientSession() as session:
-        try:
-            async with session.post(
-                f"{API_BASE_URL}/auth/telegram-connect",
-                json={"connect_token": connect_token, "telegram_id": telegram_id}
-            ) as response:
-                if response.status == 200:
-                    data = await response.json()
-                    await message.answer(
-                        f"✅ {data.get('message', 'Аккаунт успешно подключен!')}\n\n"
-                        "Теперь вы можете использовать бота для управления тренировками."
-                    )
-                else:
-                    error_data = await response.json()
-                    await message.answer(
-                        f"❌ Ошибка подключения: {error_data.get('detail', 'Неизвестная ошибка')}"
-                    )
-        except Exception as e:
-            await message.answer(f"❌ Ошибка соединения с сервером: {str(e)}")
+        # Сохраняем логин и переходим к вводу пароля
+        user_state['login'] = text
+        user_state['state'] = 'waiting_password'
+
+        await message.answer(
+            "Теперь введите ваш пароль:"
+        )
+
+    elif user_state['state'] == 'waiting_password':
+        login = user_state.get('login')
+        if not login:
+            await message.answer("❌ Произошла ошибка. Начните заново с /start")
+            del user_states[user_id]
+            return
+
+        # Отправляем запрос на аутентификацию
+        async with aiohttp.ClientSession() as session:
+            try:
+                async with session.post(
+                    f"{API_BASE_URL}/auth/bot-login",
+                    json={
+                        "telegram_id": user_id,
+                        "username": login,
+                        "password": text
+                    }
+                ) as response:
+                    if response.status == 200:
+                        data = await response.json()
+                        if data.get('success'):
+                            await message.answer(
+                                f"✅ {data.get('message', 'Авторизация успешна!')}\n\n"
+                                "Теперь вы можете использовать все функции бота.\n"
+                                "Используйте /help для просмотра команд."
+                            )
+                            del user_states[user_id]  # Очищаем состояние
+                        else:
+                            await message.answer(
+                                f"❌ {data.get('message', 'Ошибка авторизации')}\n\n"
+                                "Попробуйте еще раз или используйте /start для перезапуска."
+                            )
+                            del user_states[user_id]
+                    else:
+                        await message.answer(
+                            "❌ Ошибка сервера. Попробуйте позже."
+                        )
+                        del user_states[user_id]
+
+            except Exception as e:
+                await message.answer(f"❌ Ошибка соединения: {str(e)}")
+                del user_states[user_id]
