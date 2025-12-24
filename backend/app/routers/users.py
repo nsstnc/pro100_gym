@@ -32,20 +32,6 @@ async def get_user_by_telegram(telegram_id: int, db: AsyncSession = Depends(get_
     return user
 
 
-@router.get("/by-telegram/{telegram_id}", response_model=schemas.user.User)
-async def get_user_by_telegram(telegram_id: int, db: AsyncSession = Depends(get_session)):
-    """
-    Получение пользователя по Telegram ID.
-    Используется ботом для проверки авторизации.
-    """
-    user = await crud_user.get_user_by_telegram_id(db, telegram_id)
-    if not user:
-        from fastapi import HTTPException
-        raise HTTPException(status_code=404, detail="Пользователь не найден")
-
-    return user
-
-
 @router.patch("/me", response_model=schemas.user.User)
 async def update_current_user(
     user_update: schemas.user.UserProfileUpdate,
