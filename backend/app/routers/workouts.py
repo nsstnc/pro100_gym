@@ -2,7 +2,7 @@ import datetime
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.auth import get_current_user
+from app.auth import get_user_by_token_or_telegram_id
 from app.db import get_session
 from app.models import User
 from app.schemas.workout import WorkoutPlan
@@ -14,7 +14,7 @@ router = APIRouter(prefix="/workouts", tags=["Workouts"])
 
 @router.post("/generate", response_model=WorkoutPlan)
 async def generate_and_save_workout_plan(
-    current_user: User = Depends(get_current_user),
+    current_user: User = Depends(get_user_by_token_or_telegram_id),
     db: AsyncSession = Depends(get_session)
 ):
     """
@@ -49,7 +49,7 @@ async def generate_and_save_workout_plan(
 
 @router.get("/", response_model=WorkoutPlan)
 async def get_current_plan(
-    current_user: User = Depends(get_current_user),
+    current_user: User = Depends(get_user_by_token_or_telegram_id),
     db: AsyncSession = Depends(get_session)
 ):
     """
@@ -66,7 +66,7 @@ async def get_current_plan(
 
 @router.delete("/", status_code=status.HTTP_204_NO_CONTENT)
 async def delete_current_plan(
-    current_user: User = Depends(get_current_user),
+    current_user: User = Depends(get_user_by_token_or_telegram_id),
     db: AsyncSession = Depends(get_session)
 ):
     """

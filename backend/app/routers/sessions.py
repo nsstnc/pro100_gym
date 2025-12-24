@@ -3,7 +3,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from typing import List, Optional
 
 from app.db import get_session
-from app.auth import get_current_user
+from app.auth import get_user_by_token_or_telegram_id
 from app.models import User, WorkoutPlan, SessionStatus, WorkoutSession, SessionSet
 from app.schemas.session import (
     StartSessionRequest,
@@ -21,7 +21,7 @@ router = APIRouter(prefix="/sessions", tags=["Workout Sessions"])
 @router.post("/start", response_model=ActiveWorkoutSession)
 async def start_workout_session(
         request: StartSessionRequest,
-        current_user: User = Depends(get_current_user),
+        current_user: User = Depends(get_user_by_token_or_telegram_id),
         db: AsyncSession = Depends(get_session)
 ):
     # Проверить наличие активной сессии
@@ -63,7 +63,7 @@ async def start_workout_session(
 
 @router.get("/active", response_model=Optional[ActiveWorkoutSession])
 async def get_active_workout_session(
-        current_user: User = Depends(get_current_user),
+        current_user: User = Depends(get_user_by_token_or_telegram_id),
         db: AsyncSession = Depends(get_session)
 ):
     session = await crud_session.get_active_session_by_user_id(db, current_user.id)
@@ -76,7 +76,7 @@ async def get_active_workout_session(
 async def complete_session_set(
         set_id: int,
         request: CompleteSetRequest,
-        current_user: User = Depends(get_current_user),
+        current_user: User = Depends(get_user_by_token_or_telegram_id),
         db: AsyncSession = Depends(get_session)
 ):
     session_set = await crud_session.get_session_set_by_id(db, set_id)
@@ -103,7 +103,7 @@ async def complete_session_set(
 @router.post("/sets/{set_id}/skip", response_model=SessionSetSchema)
 async def skip_session_set(
         set_id: int,
-        current_user: User = Depends(get_current_user),
+        current_user: User = Depends(get_user_by_token_or_telegram_id),
         db: AsyncSession = Depends(get_session)
 ):
     session_set = await crud_session.get_session_set_by_id(db, set_id)
@@ -128,7 +128,7 @@ async def skip_session_set(
 @router.post("/{session_id}/finish", response_model=ActiveWorkoutSession)
 async def finish_workout_session(
         session_id: int,
-        current_user: User = Depends(get_current_user),
+        current_user: User = Depends(get_user_by_token_or_telegram_id),
         db: AsyncSession = Depends(get_session)
 ):
     # 1. Fetch active session to check status and ownership
@@ -158,7 +158,7 @@ async def finish_workout_session(
 @router.post("/{session_id}/cancel", response_model=dict)
 async def cancel_workout_session(
         session_id: int,
-        current_user: User = Depends(get_current_user),
+        current_user: User = Depends(get_user_by_token_or_telegram_id),
         db: AsyncSession = Depends(get_session)
 ):
     session = await db.get(WorkoutSession, session_id)  # Загрузить сессию

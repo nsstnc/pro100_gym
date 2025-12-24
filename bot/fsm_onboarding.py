@@ -126,7 +126,7 @@ async def session_duration(message: Message, state: FSMContext):
     try:
         # Используем существующий эндпоинт PATCH /users/me
         s = await backend._session_obj()
-        headers = await backend._headers()
+        headers = await backend._headers(telegram_id=message.from_user.id)
         async with s.patch(f"{API_BASE_URL}/users/me", json=profile, headers=headers) as resp:
             result = await resp.json()
 
@@ -153,7 +153,7 @@ async def session_duration(message: Message, state: FSMContext):
 @router.callback_query(F.data == "generate_plan")
 async def generate_plan_button(callback: types.CallbackQuery):
     try:
-        plan = await backend.generate_plan()
+        plan = await backend.generate_plan(telegram_id=callback.from_user.id)
 
         if not plan or "id" not in plan:
             return await callback.message.answer(f"Ошибка генерации плана: {plan}")

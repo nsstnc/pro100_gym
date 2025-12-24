@@ -2,7 +2,7 @@ from fastapi import APIRouter, Depends
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app import schemas
-from app.auth import get_current_user
+from app.auth import get_user_by_token_or_telegram_id
 from app.crud import user as crud_user
 from app.db import get_session
 from app.models import User
@@ -11,7 +11,7 @@ router = APIRouter(prefix="/users", tags=["Users"])
 
 
 @router.get("/me", response_model=schemas.user.User)
-async def read_current_user(current_user: User = Depends(get_current_user)):
+async def read_current_user(current_user: User = Depends(get_user_by_token_or_telegram_id)):
     """
     Получение информации о текущем аутентифицированном пользователе.
     """
@@ -35,7 +35,7 @@ async def get_user_by_telegram(telegram_id: int, db: AsyncSession = Depends(get_
 @router.patch("/me", response_model=schemas.user.User)
 async def update_current_user(
     user_update: schemas.user.UserProfileUpdate,
-    current_user: User = Depends(get_current_user),
+    current_user: User = Depends(get_user_by_token_or_telegram_id),
     db: AsyncSession = Depends(get_session)
 ):
     """

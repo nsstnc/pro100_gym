@@ -4,7 +4,7 @@ from fastapi.security import OAuth2PasswordRequestForm
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app import schemas
-from app.auth import authenticate_user, get_current_user
+from app.auth import authenticate_user, get_user_by_token_or_telegram_id
 from app.crud import user as crud_user
 from app.db import get_session
 from app.models import User
@@ -62,7 +62,7 @@ async def logout():
 
 
 @router.get("/telegram-link", response_model=schemas.telegram.TelegramLinkResponse)
-async def get_telegram_link(current_user: User = Depends(get_current_user)):
+async def get_telegram_link(current_user: User = Depends(get_user_by_token_or_telegram_id)):
     """
     Генерирует ссылку на Telegram бота для подключения аккаунта.
     """

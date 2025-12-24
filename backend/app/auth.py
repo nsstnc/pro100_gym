@@ -1,4 +1,4 @@
-from fastapi import Depends, HTTPException, status
+from fastapi import Depends, HTTPException, status, Request
 from fastapi.security import OAuth2PasswordBearer
 from jose import JWTError
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -12,7 +12,7 @@ from app.security import verify_password, decode_access_token
 from app.config import settings
 
 # Схема OAuth2, указывает URL для получения токена
-oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/token/token")
+oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/auth/login", auto_error=False)
 
 
 async def authenticate_user(
@@ -34,19 +34,9 @@ async def authenticate_user(
     return user
 
 
-async def get_current_user(
-    token: str = Depends(oauth2_scheme), db: AsyncSession = Depends(get_session)
-) -> User:
+async def _get_user_from_token(db: AsyncSession, token: str) -> User:
     """
-    Зависимость для получения текущего пользователя из JWT токена.
-
-    Проверяет токен, извлекает из него имя пользователя и загружает
-    пользователя из базы данных.
-
-    :param token: JWT токен из заголовка Authorization.
-    :param db: Сессия базы данных.
-    :return: Модель текущего пользователя.
-    :raises HTTPException: Если токен невалиден или пользователь не найден.
+    Вспомогательная функция для декодирования токена и получения пользователя.
     """
     credentials_exception = HTTPException(
         status_code=status.HTTP_401_UNAUTHORIZED,
@@ -66,3 +56,56 @@ async def get_current_user(
     if user is None:
         raise credentials_exception
     return user
+
+
+async def get_current_user(
+    token: str = Depends(oauth2_scheme), db: AsyncSession = Depends(get_session)
+) -> User:
+    """
+    Зависимость для получения текущего пользователя из JWT токена.
+    """
+    if token is None:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Не аутентифицирован",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+    return await _get_user_from_token(db, token)
+
+
+async def get_user_by_token_or_telegram_id(
+    request: Request,
+    db: AsyncSession = Depends(get_session),
+) -> User:
+    """
+    Универсальная зависимость для получения пользователя:
+    1. По заголовку X-Telegram-User-ID.
+    2. По JWT токену в заголовке Authorization.
+    """
+    credentials_exception = HTTPException(
+        status_code=status.HTTP_401_UNAUTHORIZED,
+        detail="Не удалось проверить учетные данные",
+        headers={"WWW-Authenticate": 'Bearer, "X-Telegram-User-ID"'},
+    )
+    
+    telegram_id_str = request.headers.get("X-Telegram-User-ID")
+
+    # Приоритет отдается аутентификации по Telegram ID, если заголовок присутствует
+    if telegram_id_str:
+        try:
+            telegram_id = int(telegram_id_str)
+            user = await crud_user.get_user_by_telegram_id(db, telegram_id=telegram_id)
+            if user:
+                return user
+            else:
+                # Если заголовок есть, но юзер не найден - это ошибка.
+                raise HTTPException(status_code=404, detail="Пользователь с указанным Telegram ID не найден.")
+        except (ValueError, TypeError):
+            raise HTTPException(status_code=400, detail="Неверный формат X-Telegram-User-ID.")
+    
+    # Если заголовка нет, пробуем аутентификацию по токену
+    token = await oauth2_scheme(request)
+    if token is None:
+        raise credentials_exception
+        
+    return await _get_user_from_token(db, token)

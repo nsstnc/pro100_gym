@@ -109,7 +109,7 @@ async def training_menu(message: Message):
     update_user_activity(user_id)
 
     # Сначала проверяем, есть ли активная сессия
-    session_resp = await backend.get_active_session()
+    session_resp = await backend.get_active_session(telegram_id=user_id)
     session = session_resp.get("data") if isinstance(session_resp, dict) else None
 
     if session:
@@ -140,7 +140,7 @@ async def training_menu(message: Message):
             return
 
     # Нет активной сессии — показываем план
-    plan = await backend.get_workout_plan()
+    plan = await backend.get_workout_plan(telegram_id=user_id)
 
     if not isinstance(plan, dict) or not plan.get("id"):
         text = "У вас пока нет тренировочного плана. Пройдите онбординг или сгенерируйте план."
@@ -168,7 +168,7 @@ async def cb_generate_plan(callback: types.CallbackQuery):
     update_user_activity(user_id)
     await callback.answer()
 
-    plan = await backend.generate_plan()
+    plan = await backend.generate_plan(telegram_id=user_id)
     if not isinstance(plan, dict) or not plan.get("id"):
         return await callback.message.answer(f"Ошибка генерации плана: {plan}")
 
@@ -190,7 +190,7 @@ async def cb_start_day(callback: types.CallbackQuery):
         return await callback.message.answer("Неверный день.")
 
     # Проверяем активную сессию
-    active_resp = await backend.get_active_session()
+    active_resp = await backend.get_active_session(telegram_id=user_id)
     active_data = active_resp.get("data") if isinstance(active_resp, dict) else None
 
     if active_data:
@@ -222,14 +222,14 @@ async def cb_start_day(callback: types.CallbackQuery):
             active_sessions.pop(user_id, None)
 
     # Нет активной — стартуем новую
-    plan = await backend.get_workout_plan()
+    plan = await backend.get_workout_plan(telegram_id=user_id)
     if not plan or "id" not in plan:
         return await callback.message.answer("Нет плана. Сгенерируйте новый.")
 
     if day_index >= len(plan.get("days", [])):
         return await callback.message.answer("Неверный день.")
 
-    session_resp = await backend.start_session(plan["id"], day_index)
+    session_resp = await backend.start_session(plan["id"], day_index, telegram_id=user_id)
     if isinstance(session_resp, dict) and session_resp.get("status_code") == 400:
         error_msg = session_resp.get("error", "Неизвестная ошибка")
         return await callback.message.answer(f"Не удалось начать тренировку:\n{error_msg}")
@@ -305,11 +305,11 @@ async def cb_complete_set(callback: types.CallbackQuery):
         return await callback.message.answer("Неверный сет.")
 
     try:
-        await backend.complete_set(set_id, reps_done=0, weight_lifted=0.0)
+        await backend.complete_set(set_id, reps_done=0, weight_lifted=0.0, telegram_id=user_id)
     except Exception as e:
         return await callback.message.answer(f"Ошибка: {e}")
 
-    session_resp = await backend.get_active_session()
+    session_resp = await backend.get_active_session(telegram_id=user_id)
     session = session_resp.get("data") if isinstance(session_resp, dict) else None
 
     if not session or (not session.get("session_days") and not session.get("exercises")):
@@ -365,11 +365,11 @@ async def cb_skip_set(callback: types.CallbackQuery):
         return await callback.message.answer("Неверный сет.")
 
     try:
-        await backend.skip_set(set_id)
+        await backend.skip_set(set_id, telegram_id=user_id)
     except Exception as e:
         return await callback.message.answer(f"Ошибка: {e}")
 
-    session_resp = await backend.get_active_session()
+    session_resp = await backend.get_active_session(telegram_id=user_id)
     session = session_resp.get("data") if isinstance(session_resp, dict) else None
 
     if not session or (not session.get("session_days") and not session.get("exercises")):

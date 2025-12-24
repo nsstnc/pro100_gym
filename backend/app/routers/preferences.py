@@ -3,7 +3,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.schemas.preferences import UserPreferencesUpdate, UserPreferencesResponse
 from app.models import User
-from app.auth import get_current_user
+from app.auth import get_user_by_token_or_telegram_id
 from app.db import get_session
 from app.crud import preferences as crud_preferences
 
@@ -13,7 +13,7 @@ router = APIRouter(prefix="/preferences", tags=["User Preferences"])
 @router.put("/me", response_model=UserPreferencesResponse, summary="Обновить предпочтения текущего пользователя")
 async def update_current_user_preferences(
     preferences_data: UserPreferencesUpdate,
-    current_user: User = Depends(get_current_user),
+    current_user: User = Depends(get_user_by_token_or_telegram_id),
     db: AsyncSession = Depends(get_session)
 ):
     """
@@ -28,7 +28,7 @@ async def update_current_user_preferences(
 
 @router.get("/me", response_model=UserPreferencesResponse, summary="Получить предпочтения текущего пользователя")
 async def get_current_user_preferences(
-    current_user: User = Depends(get_current_user),
+    current_user: User = Depends(get_user_by_token_or_telegram_id),
     db: AsyncSession = Depends(get_session)
 ):
     """

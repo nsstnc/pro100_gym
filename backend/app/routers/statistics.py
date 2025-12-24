@@ -3,7 +3,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from typing import Optional
 
 from app.db import get_session
-from app.auth import get_current_user
+from app.auth import get_user_by_token_or_telegram_id
 from app.models import User
 from app.crud import statistics as crud_statistics
 from app.schemas.statistics import StatisticsResponse
@@ -15,7 +15,7 @@ router = APIRouter(prefix="/statistics", tags=["User Statistics"])
 @router.get("/me", response_model=StatisticsResponse)
 async def get_user_statistics(
     period: Optional[str] = Query("all_time", description="Период для статистики (all_time, last_month, last_week)"),
-    current_user: User = Depends(get_current_user),
+    current_user: User = Depends(get_user_by_token_or_telegram_id),
     db: AsyncSession = Depends(get_session)
 ):
     if period not in ["all_time", "last_month", "last_week"]:
