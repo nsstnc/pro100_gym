@@ -126,6 +126,11 @@ async def start_auth(message: Message, state: FSMContext):
 
 
 
+class ReminderStates(StatesGroup):
+    waiting_minutes = State()
+
+# ... (other code)
+
 # === НАПОМИНАНИЯ ===
 
 def decline_minutes(n: int):
@@ -137,19 +142,26 @@ def decline_minutes(n: int):
         return "минут"
 
 
+async def send_reminder(message: Message, minutes: int):
+    await asyncio.sleep(minutes * 60)
+    await message.answer(f"⏰ Напоминаю, как вы просили {minutes} {decline_minutes(minutes)} назад!")
+
+
 @router.message(F.text == "⏱ Напоминание")
-async def reminder_start(message: Message):
+async def reminder_start(message: Message, state: FSMContext):
+    await state.set_state(ReminderStates.waiting_minutes)
     await message.answer("Через сколько минут напомнить?")
 
 
-@router.message(StateFilter(None), lambda m: m.text.isdigit())
-async def reminder_set(message: Message):
+@router.message(ReminderStates.waiting_minutes, F.text.isdigit())
+async def reminder_set(message: Message, state: FSMContext):
     minutes = int(message.text)
 
     await message.answer(
         f"Окей, напомню через {minutes} {decline_minutes(minutes)}!",
         reply_markup=main_menu
     )
+    await state.clear()
 
     # Создаем фоновую задачу для отправки напоминания
     # Это не блокирует event loop
@@ -215,16 +227,3 @@ async def auth_password(message: Message, state: FSMContext):
         except Exception as e:
             await message.answer(f"❌ Ошибка соединения: {str(e)}")
             await state.set_state(None)
-
-
-# === НАПОМИНАНИЯ ===
-
-def decline_minutes(n: int):
-    if n % 10 == 1 and n % 100 != 11:
-        return "минуту"
-    elif 2 <= n % 10 <= 4 and not 12 <= n % 100 <= 14:
-        return "минуты"
-    else:
-        return "минут"
-
-

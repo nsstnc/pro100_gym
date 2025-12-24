@@ -32,6 +32,8 @@ def run_polling():
 
 
 async def main_polling():
+    # Запуск фоновой задачи напоминаний
+    asyncio.create_task(reminder_loop(bot))
     # Принудительно сбрасываем любую старую polling-сессию или webhook
     await bot.delete_webhook(drop_pending_updates=True)
     await dp.start_polling(bot)
