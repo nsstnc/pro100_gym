@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import React, { useEffect, useState, FC } from 'react';
 import { BrowserRouter as Router, Routes, Route, useLocation } from 'react-router-dom';
 
 import Navbar from './components/Navbar';
@@ -42,14 +42,12 @@ const getPageTitle = (pathname: string) => {
       return 'Статистика';
     case '/onboarding':
       return 'Онбординг';
-    case '/connect':
-      return 'Подключение Telegram';
     default:
       return 'pro100gym';
   }
 };
 
-const AppShell = () => {
+const AppShell: FC = () => {
   const location = useLocation();
   const [hasToken, setHasToken] = useState(getHasToken);
 
@@ -93,7 +91,7 @@ const AppShell = () => {
   );
 };
 
-function App() {
+function App(): JSX.Element {
   return (
     <Router>
       <AppShell />

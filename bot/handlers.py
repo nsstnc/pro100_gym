@@ -121,10 +121,43 @@ async def start_auth(message: Message):
     )
 
 
+
+
+# === НАПОМИНАНИЯ ===
+
+def decline_minutes(n: int):
+    if n % 10 == 1 and n % 100 != 11:
+        return "минуту"
+    elif 2 <= n % 10 <= 4 and not 12 <= n % 100 <= 14:
+        return "минуты"
+    else:
+        return "минут"
+
+
+@router.message(F.text == "⏱ Напоминание")
+async def reminder_start(message: Message):
+    await message.answer("Через сколько минут напомнить?")
+
+
+@router.message(StateFilter(None), lambda m: m.text.isdigit())
+async def reminder_set(message: Message):
+    minutes = int(message.text)
+
+    await message.answer(
+        f"Окей, напомню через {minutes} {decline_minutes(minutes)}!",
+        reply_markup=main_menu
+    )
+
+    # Создаем фоновую задачу для отправки напоминания
+    # Это не блокирует event loop
+    asyncio.create_task(send_reminder(message, minutes))
+
+
 @router.message()
 async def handle_text(message: Message):
     """
     Обрабатывает текстовые сообщения в зависимости от состояния пользователя.
+    Это catch-all хендлер, который должен быть в конце файла.
     """
     user_id = message.from_user.id
     text = message.text
