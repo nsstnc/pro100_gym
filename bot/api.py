@@ -3,7 +3,7 @@ import asyncio
 from dotenv import load_dotenv
 import os
 from typing import Optional, Any, Dict
-from config import API_URL  
+from config import API_BASE_URL  
 
 load_dotenv()
 
@@ -66,7 +66,7 @@ class BackendAPI:
             s = await self._session_obj()
             try:
                 async with s.post(
-                    f"{API_URL}/auth/login",
+                    f"{API_BASE_URL}/auth/login",
                     data={"username": API_USERNAME, "password": API_PASSWORD},
                     timeout=10
                 ) as resp:
@@ -94,7 +94,7 @@ class BackendAPI:
 
         s = await self._session_obj()
         headers = await self._headers()
-        async with s.get(f"{API_URL}/workouts/", headers=headers) as resp:
+        async with s.get(f"{API_BASE_URL}/workouts/", headers=headers) as resp:
             result = await resp.json()
             return result.get("data") if isinstance(result, dict) else None
 
@@ -105,7 +105,7 @@ class BackendAPI:
 
         s = await self._session_obj()
         headers = await self._headers()
-        async with s.post(f"{API_URL}/workouts/generate", headers=headers) as resp:
+        async with s.post(f"{API_BASE_URL}/workouts/generate", headers=headers) as resp:
             result = await resp.json()
             return result.get("data") if isinstance(result, dict) else None
 
@@ -121,7 +121,7 @@ class BackendAPI:
         s = await self._session_obj()
         headers = await self._headers()
         payload = {"workout_plan_id": workout_plan_id, "day_index": day_index}
-        async with s.post(f"{API_URL}/sessions/start", headers=headers, json=payload) as resp:
+        async with s.post(f"{API_BASE_URL}/sessions/start", headers=headers, json=payload) as resp:
             return await resp.json()
 
     async def get_active_session(self):
@@ -131,7 +131,7 @@ class BackendAPI:
 
         s = await self._session_obj()
         headers = await self._headers()
-        async with s.get(f"{API_URL}/sessions/active", headers=headers) as resp:
+        async with s.get(f"{API_BASE_URL}/sessions/active", headers=headers) as resp:
             return await resp.json()
 
     async def complete_set(self, set_id: int, reps_done: int, weight_lifted: float = 0.0):
@@ -141,7 +141,7 @@ class BackendAPI:
         s = await self._session_obj()
         headers = await self._headers()
         async with s.post(
-            f"{API_URL}/sessions/sets/{set_id}/complete",
+            f"{API_BASE_URL}/sessions/sets/{set_id}/complete",
             headers=headers,
             json={"reps_done": reps_done, "weight_lifted": weight_lifted}
         ) as resp:
@@ -153,7 +153,7 @@ class BackendAPI:
 
         s = await self._session_obj()
         headers = await self._headers()
-        async with s.post(f"{API_URL}/sessions/sets/{set_id}/skip", headers=headers) as resp:
+        async with s.post(f"{API_BASE_URL}/sessions/sets/{set_id}/skip", headers=headers) as resp:
             return await resp.json()
 
 

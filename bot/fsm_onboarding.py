@@ -3,7 +3,7 @@ from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton, Message
 from aiogram.fsm.state import StatesGroup, State
 from aiogram.fsm.context import FSMContext
 from api import backend
-from config import API_URL  # Добавляем импорт API_URL
+from config import API_BASE_URL
 
 router = Router()
 
@@ -127,7 +127,7 @@ async def session_duration(message: Message, state: FSMContext):
         # Используем существующий эндпоинт PATCH /users/me
         s = await backend._session_obj()
         headers = await backend._headers()
-        async with s.patch(f"{API_URL}/users/me", json=profile, headers=headers) as resp:
+        async with s.patch(f"{API_BASE_URL}/users/me", json=profile, headers=headers) as resp:
             result = await resp.json()
 
         if resp.status >= 400:

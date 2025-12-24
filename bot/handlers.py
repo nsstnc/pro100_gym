@@ -3,10 +3,15 @@ import asyncio
 from aiogram import Router, F
 from aiogram.types import Message, ReplyKeyboardMarkup, KeyboardButton
 from aiogram.filters import CommandStart, Command, StateFilter
+from aiogram.fsm.context import FSMContext
 from config import API_BASE_URL
 
-# Хранилище состояний пользователей для онбординга
-user_states = {}  # user_id -> {'state': 'waiting_login' | 'waiting_password' | 'waiting_auth', 'login': str}
+# FSM для авторизации
+from aiogram.fsm.state import StatesGroup, State
+
+class AuthStates(StatesGroup):
+    waiting_login = State()
+    waiting_password = State()
 
 router = Router()
 
@@ -30,7 +35,7 @@ auth_menu = ReplyKeyboardMarkup(
 )
 
 @router.message(CommandStart())
-async def cmd_start(message: Message):
+async def cmd_start(message: Message, state: FSMContext):
     user_id = message.from_user.id
     args = message.text.split()
 
@@ -48,6 +53,7 @@ async def cmd_start(message: Message):
                     if response.status == 200:
                         data = await response.json()
                         if data.get('success'):
+                            await state.set_state(None)  # Очищаем состояние FSM
                             await message.answer(
                                 f"{data.get('message')}\n\n"
                                 "Используйте меню ниже 👇",
@@ -60,11 +66,9 @@ async def cmd_start(message: Message):
                                 "Попробуйте авторизоваться другим способом.",
                                 reply_markup=auth_menu
                             )
-                            user_states[user_id] = {'state': 'waiting_auth'}
                             return
             except Exception as e:
                 await message.answer(f"❌ Ошибка соединения: {str(e)}")
-                user_states[user_id] = {'state': 'waiting_auth'}
                 return
 
     # Проверяем, есть ли у пользователя уже подключенный аккаунт
@@ -73,6 +77,7 @@ async def cmd_start(message: Message):
             async with session.get(f"{API_BASE_URL}/users/by-telegram/{user_id}") as response:
                 if response.status == 200:
                     user_data = await response.json()
+                    await state.set_state(None)  # Очищаем состояние FSM
                     await message.answer(
                         f"🏋️ С возвращением, {user_data.get('username', 'пользователь')}!\n\n"
                         "Вы уже авторизованы. Используйте меню ниже 👇",
@@ -83,7 +88,6 @@ async def cmd_start(message: Message):
             pass  # Игнорируем ошибки, продолжаем с авторизацией
 
     # Начинаем процесс авторизации
-    user_states[user_id] = {'state': 'waiting_auth'}
     await message.answer(
         "🏋️ Добро пожаловать в Pro100 Gym!\n\n"
         "Для использования бота нужно авторизоваться.\n"
@@ -112,9 +116,8 @@ async def help_button(message: Message):
 # === АВТОРИЗАЦИЯ ===
 
 @router.message(F.text == "🚀 Авторизоваться")
-async def start_auth(message: Message):
-    user_id = message.from_user.id
-    user_states[user_id] = {'state': 'waiting_login'}
+async def start_auth(message: Message, state: FSMContext):
+    await state.set_state(AuthStates.waiting_login)
 
     await message.answer(
         "Введите ваше имя пользователя (username) на сайте:"
@@ -153,82 +156,65 @@ async def reminder_set(message: Message):
     asyncio.create_task(send_reminder(message, minutes))
 
 
-@router.message()
-async def handle_text(message: Message):
-    """
-    Обрабатывает текстовые сообщения в зависимости от состояния пользователя.
-    Это catch-all хендлер, который должен быть в конце файла.
-    """
+@router.message(AuthStates.waiting_login)
+async def auth_username(message: Message, state: FSMContext):
+    """Обработка ввода username для авторизации"""
+    await state.update_data(username=message.text)
+    await state.set_state(AuthStates.waiting_password)
+
+    await message.answer("Теперь введите ваш пароль:")
+
+
+@router.message(AuthStates.waiting_password)
+async def auth_password(message: Message, state: FSMContext):
+    """Обработка ввода пароля для авторизации"""
+    data = await state.get_data()
+    username = data.get('username')
+    password = message.text
     user_id = message.from_user.id
-    text = message.text
 
-    # Проверяем состояние пользователя
-    user_state = user_states.get(user_id)
-
-    if not user_state:
-        await message.answer(
-            "Используйте /start для начала работы с ботом."
-        )
+    if not username:
+        await message.answer("❌ Произошла ошибка. Начните заново с /start")
+        await state.set_state(None)
         return
 
-    if user_state['state'] == 'waiting_auth':
-        if text == "🚀 Авторизоваться":
-            await start_auth(message)
-        return
-
-    if user_state['state'] == 'waiting_login':
-        # Сохраняем логин и переходим к вводу пароля
-        user_state['login'] = text
-        user_state['state'] = 'waiting_password'
-
-        await message.answer(
-            "Теперь введите ваш пароль:"
-        )
-
-    elif user_state['state'] == 'waiting_password':
-        login = user_state.get('login')
-        if not login:
-            await message.answer("❌ Произошла ошибка. Начните заново с /start")
-            del user_states[user_id]
-            return
-
-        # Отправляем запрос на аутентификацию
-        async with aiohttp.ClientSession() as session:
-            try:
-                async with session.post(
-                    f"{API_BASE_URL}/auth/bot-login",
-                    json={
-                        "telegram_id": user_id,
-                        "username": login,
-                        "password": text
-                    }
-                ) as response:
-                    if response.status == 200:
-                        data = await response.json()
-                        if data.get('success'):
-                            await message.answer(
-                                f"✅ {data.get('message', 'Авторизация успешна!')}\n\n"
-                                "Теперь вы можете использовать все функции бота.\n"
-                                "Используйте меню ниже 👇",
-                                reply_markup=main_menu
-                            )
-                            del user_states[user_id]  # Очищаем состояние
-                        else:
-                            await message.answer(
-                                f"❌ {data.get('message', 'Ошибка авторизации')}\n\n"
-                                "Попробуйте еще раз:",
-                                reply_markup=auth_menu
-                            )
-                            user_states[user_id] = {'state': 'waiting_auth'}
+    # Отправляем запрос на аутентификацию
+    async with aiohttp.ClientSession() as session:
+        try:
+            async with session.post(
+                f"{API_BASE_URL}/auth/bot-login",
+                json={
+                    "telegram_id": user_id,
+                    "username": username,
+                    "password": password
+                }
+            ) as response:
+                if response.status == 200:
+                    data = await response.json()
+                    if data.get('success'):
+                        await message.answer(
+                            f"✅ {data.get('message', 'Авторизация успешна!')}\n\n"
+                            "Теперь вы можете использовать все функции бота.\n"
+                            "Используйте меню ниже 👇",
+                            reply_markup=main_menu
+                        )
+                        await state.set_state(None)  # Очищаем состояние
                     else:
                         await message.answer(
-                            "❌ Ошибка сервера. Попробуйте позже."
+                            f"❌ {data.get('message', 'Ошибка авторизации')}\n\n"
+                            "Попробуйте еще раз:",
+                            reply_markup=auth_menu
                         )
-                        del user_states[user_id]
+                        await state.set_state(None)
+                else:
+                    await message.answer(
+                        "❌ Ошибка сервера. Попробуйте позже."
+                    )
+                    await state.set_state(None)
 
-            except Exception as e:
-                await message.answer(f"❌ Ошибка соединения: {str(e)}")
-                del user_states[user_id]
+        except Exception as e:
+            await message.answer(f"❌ Ошибка соединения: {str(e)}")
+            await state.set_state(None)
 
 
 # === НАПОМИНАНИЯ ===
