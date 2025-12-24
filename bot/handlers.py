@@ -32,6 +32,40 @@ auth_menu = ReplyKeyboardMarkup(
 @router.message(CommandStart())
 async def cmd_start(message: Message):
     user_id = message.from_user.id
+    args = message.text.split()
+
+    # Проверяем, передан ли токен подключения
+    if len(args) > 1 and args[1].startswith('ey'):  # JWT токен начинается с 'ey'
+        connect_token = args[1]
+
+        # Отправляем токен в backend для связывания аккаунтов
+        async with aiohttp.ClientSession() as session:
+            try:
+                async with session.post(
+                    f"{API_BASE_URL}/auth/link-telegram",
+                    params={"token": connect_token, "telegram_id": user_id}
+                ) as response:
+                    if response.status == 200:
+                        data = await response.json()
+                        if data.get('success'):
+                            await message.answer(
+                                f"{data.get('message')}\n\n"
+                                "Используйте меню ниже 👇",
+                                reply_markup=main_menu
+                            )
+                            return
+                        else:
+                            await message.answer(
+                                f"❌ {data.get('message')}\n\n"
+                                "Попробуйте авторизоваться другим способом.",
+                                reply_markup=auth_menu
+                            )
+                            user_states[user_id] = {'state': 'waiting_auth'}
+                            return
+            except Exception as e:
+                await message.answer(f"❌ Ошибка соединения: {str(e)}")
+                user_states[user_id] = {'state': 'waiting_auth'}
+                return
 
     # Проверяем, есть ли у пользователя уже подключенный аккаунт
     async with aiohttp.ClientSession() as session:
@@ -189,6 +223,15 @@ async def reminder_set(message: Message):
         reply_markup=main_menu
     )
 
-    await asyncio.sleep(minutes * 60)
+    # Создаем фоновую задачу для отправки напоминания
+    # Это не блокирует event loop
+    asyncio.create_task(send_reminder(message, minutes))
 
+
+async def send_reminder(message: Message, minutes: int):
+    """
+    Фоновая задача для отправки напоминания.
+    Не блокирует event loop.
+    """
+    await asyncio.sleep(minutes * 60)
     await message.answer("⏱ Напоминаю! Время тренировки!")

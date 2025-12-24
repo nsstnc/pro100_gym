@@ -17,3 +17,11 @@ class BotLoginResponse(BaseModel):
     success: bool
     message: str
     user_id: int | None = None
+
+
+class TelegramLinkResponse(BaseModel):
+    """
+    Схема ответа для генерации ссылки на Telegram бота.
+    """
+    telegram_link: str
+    connect_token: str

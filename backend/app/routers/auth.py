@@ -61,6 +61,21 @@ async def logout():
     return {"message": "Вы успешно вышли из системы."}
 
 
+@router.get("/telegram-link", response_model=schemas.telegram.TelegramLinkResponse)
+async def get_telegram_link(current_user: User = Depends(get_current_user)):
+    """
+    Генерирует ссылку на Telegram бота для подключения аккаунта.
+    """
+    # Создаем токен с user_id для подключения
+    connect_token = create_access_token(subject=str(current_user.id))
+
+    # Генерируем ссылку на бота
+    bot_username = settings.TELEGRAM_BOT_USERNAME
+    telegram_link = f"https://t.me/{bot_username}?start={connect_token}"
+
+    return {"telegram_link": telegram_link, "connect_token": connect_token}
+
+
 @router.post("/bot-login", response_model=schemas.telegram.BotLoginResponse)
 async def bot_login(
     request: schemas.telegram.BotLoginRequest,
@@ -98,5 +113,64 @@ async def bot_login(
     return {
         "success": True,
         "message": "Успешная аутентификация! Ваш Telegram аккаунт подключен.",
+        "user_id": user.id
+    }
+
+
+@router.post("/link-telegram", response_model=schemas.telegram.BotLoginResponse)
+async def link_telegram_account(
+    token: str,
+    telegram_id: int,
+    db: AsyncSession = Depends(get_session)
+):
+    """
+    Связывание Telegram аккаунта через токен из deep link.
+    """
+    try:
+        # Декодируем токен для получения user_id
+        payload = decode_access_token(token)
+        user_id_str = payload.get("sub")
+        if not user_id_str:
+            raise ValueError("Invalid token")
+        user_id = int(user_id_str)
+    except Exception:
+        return {
+            "success": False,
+            "message": "Неверный или истекший токен.",
+            "user_id": None
+        }
+
+    # Получаем пользователя
+    user = await crud_user.get_user_by_id(db, user_id)
+    if not user:
+        return {
+            "success": False,
+            "message": "Пользователь не найден.",
+            "user_id": None
+        }
+
+    # Проверяем, не подключен ли уже этот Telegram ID к другому пользователю
+    existing_user = await crud_user.get_user_by_telegram_id(db, telegram_id)
+    if existing_user and existing_user.id != user.id:
+        return {
+            "success": False,
+            "message": "Этот Telegram аккаунт уже подключен к другому пользователю.",
+            "user_id": None
+        }
+
+    # Проверяем, не подключен ли уже этот пользователь к другому Telegram
+    if user.telegram_id and user.telegram_id != telegram_id:
+        return {
+            "success": False,
+            "message": "Ваш аккаунт уже подключен к другому Telegram.",
+            "user_id": None
+        }
+
+    # Связываем аккаунты
+    await crud_user.update_user_telegram_id(db, user, telegram_id)
+
+    return {
+        "success": True,
+        "message": f"✅ Аккаунт успешно связан!\n\nДобро пожаловать, {user.username}!",
         "user_id": user.id
     }
